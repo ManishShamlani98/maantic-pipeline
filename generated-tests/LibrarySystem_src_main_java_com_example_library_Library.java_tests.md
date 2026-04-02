@@ -1,8 +1,19 @@
-# Tests for LibrarySystem/src/main/java/com/example/library/Library.java
+# AI Generated Tests for LibrarySystem/src/main/java/com/example/library/Library.java
 
-# QA Analysis for Library Management System
+Mode: TDD enhanced + BDD generated
 
-## === BDD SCENARIOS (GHERKIN) ===
+=== ANALYSIS ===
+
+The existing TDD test is incomplete with TODOs and appears to be cut off. The following improvements are needed:
+
+1. **Complete the incomplete tests** - Several tests have TODOs that need implementation
+2. **Add missing edge cases** - null handling, empty strings, concurrent operations
+3. **Improve assertions** - More specific exception message validation
+4. **Add boundary testing** - ISBN format validation, author name variations
+5. **Test state consistency** - Ensure checkout/return operations maintain proper state
+6. **Add performance considerations** - Large dataset handling
+
+=== BDD SCENARIOS (GHERKIN) ===
 
 ```gherkin
 Feature: Library Management System
@@ -10,229 +21,253 @@ Feature: Library Management System
   I want to manage books and member checkouts
   So that I can maintain an organized library system
 
-  @smoke @regression
-  Scenario: Successfully add and retrieve books
-    Given I have an empty library
-    When I add a book with ISBN "978-1234567890", title "Clean Code", and author "Robert Martin"
+  Background:
+    Given a library system is initialized
+    And the following books exist in the library:
+      | ISBN              | Title                   | Author      | Year |
+      | 978-0-06-112008-4 | To Kill a Mockingbird  | Harper Lee  | 1960 |
+      | 978-0-618-00222-3 | The Lord of the Rings  | Tolkien     | 2001 |
+
+  Scenario: Adding a new book successfully
+    When I add a book with ISBN "978-0-451-52493-5", title "1984", author "George Orwell", year 1949
     Then the book should be available in the library
-    And the book should be marked as available
+    And the total number of books should be 3
 
-  @smoke @regression
-  Scenario: Check out and return books
-    Given I have a library with a book ISBN "978-1234567890"
-    When I check out the book to member "john.doe"
-    Then the book should not be available
-    When I return the book
-    Then the book should be available again
+  Scenario: Preventing duplicate book additions
+    When I attempt to add a book with existing ISBN "978-0-06-112008-4"
+    Then a DuplicateBookException should be thrown
+    And the exception message should contain "ISBN already exists"
 
-  @regression
-  Scenario: Find books by author case-insensitive search
-    Given I have a library with books by "Robert Martin" and "Martin Fowler"
-    When I search for books by author "martin"
-    Then I should find 2 books
-    When I search for books by author "ROBERT"
+  Scenario: Removing an existing book
+    When I remove the book with ISBN "978-0-06-112008-4"
+    Then the book should no longer be in the library
+    And the total number of books should be 1
+
+  Scenario: Attempting to remove non-existent book
+    When I attempt to remove a book with ISBN "999-invalid-isbn"
+    Then a BookNotFoundException should be thrown
+
+  Scenario: Finding books by author (case insensitive)
+    When I search for books by author "harper lee"
     Then I should find 1 book
+    And the book title should be "To Kill a Mockingbird"
 
-  @edge @regression
-  Scenario: Handle duplicate ISBN addition
-    Given I have a library with a book ISBN "978-1234567890"
-    When I try to add another book with the same ISBN "978-1234567890"
-    Then I should receive a duplicate book exception
-    And the original book should remain in the library
+  Scenario: Checking out an available book
+    Given the book "978-0-06-112008-4" is available
+    When member "john.doe" checks out the book "978-0-06-112008-4"
+    Then the book should be marked as checked out
+    And the book should not be available
 
-  @edge @regression
-  Scenario: Handle operations on non-existent books
-    Given I have an empty library
-    When I try to check out book with ISBN "non-existent"
-    Then I should receive a book not found exception
-    When I try to return book with ISBN "non-existent"
-    Then I should receive a book not found exception
-    When I try to remove book with ISBN "non-existent"
-    Then I should receive a book not found exception
+  Scenario: Returning a checked out book
+    Given the book "978-0-06-112008-4" is checked out by "john.doe"
+    When the book "978-0-06-112008-4" is returned
+    Then the book should be available
+    And the book should not be marked as checked out
+
+  Scenario: Attempting to check out already checked out book
+    Given the book "978-0-06-112008-4" is checked out by "jane.smith"
+    When member "john.doe" attempts to check out the book "978-0-06-112008-4"
+    Then a BookUnavailableException should be thrown
 ```
 
-## === TDD TEST SCRIPT ===
+=== ENHANCED TDD TEST SCRIPT ===
 
 ```java
 package com.example.library;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import java.util.List;
-
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.*;
 
-@DisplayName("Library Management System Tests")
+/**
+ * Enhanced LibraryTest — Comprehensive TDD test suite
+ */
 class LibraryTest {
 
-    private Library library;
-    private Book testBook1;
-    private Book testBook2;
-    private Book testBook3;
+    private Library lib;
+    private Book book1, book2, book3;
 
     @BeforeEach
-    void setUp() {
-        library = new Library();
-        testBook1 = new Book("978-1234567890", "Clean Code", "Robert Martin");
-        testBook2 = new Book("978-0987654321", "Refactoring", "Martin Fowler");
-        testBook3 = new Book("978-1111111111", "Design Patterns", "Gang of Four");
+    void setUp() throws Exception {
+        lib = new Library();
+        book1 = new Book("978-0-06-112008-4", "To Kill a Mockingbird", "Harper Lee", 1960);
+        book2 = new Book("978-0-618-00222-3", "The Lord of the Rings", "Tolkien", 2001);
+        book3 = new Book("978-0-451-52493-5", "1984", "George Orwell", 1949);
+        lib.addBook(book1);
+        lib.addBook(book2);
     }
 
-    @Nested
-    @DisplayName("Book Addition Tests")
-    class BookAdditionTests {
-
-        @Test
-        @DisplayName("Should successfully add a new book")
-        void shouldAddNewBook() throws Library.DuplicateBookException {
-            // When
-            library.addBook(testBook1);
-
-            // Then
-            assertTrue(library.isAvailable(testBook1.isbn()));
-        }
-
-        @Test
-        @DisplayName("Should throw exception when adding duplicate ISBN")
-        void shouldThrowExceptionForDuplicateISBN() throws Library.DuplicateBookException {
-            // Given
-            library.addBook(testBook1);
-
-            // When & Then
+    @Nested @DisplayName("addBook()")
+    class AddBookTests {
+        
+        @Test @DisplayName("duplicate ISBN throws DuplicateBookException")
+        void duplicateIsbn() {
             Library.DuplicateBookException exception = assertThrows(
-                Library.DuplicateBookException.class,
-                () -> library.addBook(new Book(testBook1.isbn(), "Different Title", "Different Author"))
+                Library.DuplicateBookException.class, 
+                () -> lib.addBook(book1)
             );
-            assertTrue(exception.getMessage().contains(testBook1.isbn()));
+            assertTrue(exception.getMessage().contains("978-0-06-112008-4"));
+            assertTrue(exception.getMessage().contains("ISBN already exists"));
+        }
+
+        @Test @DisplayName("successfully adds new book")
+        void addNewBook() throws Exception {
+            lib.addBook(book3);
+            assertTrue(lib.isAvailable("978-0-451-52493-5"));
+            assertEquals(3, lib.totalBooks());
+        }
+
+        @Test @DisplayName("adding null book throws NullPointerException")
+        void addNullBook() {
+            assertThrows(NullPointerException.class, () -> lib.addBook(null));
+        }
+
+        @Test @DisplayName("books maintain insertion order")
+        void maintainsInsertionOrder() throws Exception {
+            lib.addBook(book3);
+            List<Book> allBooks = lib.getAllBooks();
+            assertEquals("To Kill a Mockingbird", allBooks.get(0).title());
+            assertEquals("The Lord of the Rings", allBooks.get(1).title());
+            assertEquals("1984", allBooks.get(2).title());
         }
     }
 
-    @Nested
-    @DisplayName("Book Removal Tests")
-    class BookRemovalTests {
+    @Nested @DisplayName("removeBook()")
+    class RemoveBookTests {
 
-        @Test
-        @DisplayName("Should successfully remove existing book")
-        void shouldRemoveExistingBook() throws Library.DuplicateBookException, Library.BookNotFoundException {
-            // Given
-            library.addBook(testBook1);
-            assertTrue(library.isAvailable(testBook1.isbn()));
-
-            // When
-            library.removeBook(testBook1.isbn());
-
-            // Then
-            assertFalse(library.isAvailable(testBook1.isbn()));
+        @Test @DisplayName("successfully removes existing book")
+        void removeExistingBook() throws Exception {
+            lib.removeBook("978-0-06-112008-4");
+            assertFalse(lib.isAvailable("978-0-06-112008-4"));
+            assertEquals(1, lib.totalBooks());
         }
 
-        @Test
-        @DisplayName("Should throw exception when removing non-existent book")
-        void shouldThrowExceptionForNonExistentBook() {
-            // When & Then
+        @Test @DisplayName("removing non-existent book throws BookNotFoundException")
+        void removeNonExistentBook() {
             Library.BookNotFoundException exception = assertThrows(
                 Library.BookNotFoundException.class,
-                () -> library.removeBook("non-existent-isbn")
+                () -> lib.removeBook("999-invalid-isbn")
             );
             assertTrue(exception.getMessage().contains("Book not found"));
+            assertTrue(exception.getMessage().contains("999-invalid-isbn"));
         }
 
-        @Test
-        @DisplayName("Should remove checked out book successfully")
-        void shouldRemoveCheckedOutBook() throws Exception {
-            // Given
-            library.addBook(testBook1);
-            library.checkOut(testBook1.isbn(), "member1");
-
-            // When
-            library.removeBook(testBook1.isbn());
-
-            // Then
-            assertFalse(library.isAvailable(testBook1.isbn()));
-        }
-    }
-
-    @Nested
-    @DisplayName("Author Search Tests")
-    class AuthorSearchTests {
-
-        @BeforeEach
-        void setUpBooks() throws Library.DuplicateBookException {
-            library.addBook(testBook1); // Robert Martin
-            library.addBook(testBook2); // Martin Fowler
-            library.addBook(testBook3); // Gang of Four
-        }
-
-        @Test
-        @DisplayName("Should find books by exact author name")
-        void shouldFindBooksByExactAuthor() {
-            // When
-            List<Book> books = library.findByAuthor("Robert Martin");
-
-            // Then
-            assertEquals(1, books.size());
-            assertEquals(testBook1.isbn(), books.get(0).isbn());
+        @Test @DisplayName("removing checked out book cleans up checkout state")
+        void removeCheckedOutBook() throws Exception {
+            lib.checkOut("978-0-06-112008-4", "john.doe");
+            lib.removeBook("978-0-06-112008-4");
+            
+            assertFalse(lib.isAvailable("978-0-06-112008-4"));
+            assertEquals(1, lib.totalBooks());
         }
 
         @ParameterizedTest
-        @ValueSource(strings = {"martin", "MARTIN", "Martin", "MaRtIn"})
-        @DisplayName("Should find books by author case-insensitive")
-        void shouldFindBooksCaseInsensitive(String searchTerm) {
-            // When
-            List<Book> books = library.findByAuthor(searchTerm);
+        @NullAndEmptySource
+        @DisplayName("removing null or empty ISBN throws appropriate exception")
+        void removeInvalidIsbn(String isbn) {
+            assertThrows(Exception.class, () -> lib.removeBook(isbn));
+        }
+    }
 
-            // Then
-            assertEquals(2, books.size());
+    @Nested @DisplayName("findByAuthor()")
+    class FindByAuthorTests {
+
+        @Test @DisplayName("finds books by exact author name")
+        void findByExactAuthor() {
+            List<Book> books = lib.findByAuthor("Harper Lee");
+            assertEquals(1, books.size());
+            assertEquals("To Kill a Mockingbird", books.get(0).title());
         }
 
-        @Test
-        @DisplayName("Should return empty list for null author")
-        void shouldReturnEmptyListForNullAuthor() {
-            // When
-            List<Book> books = library.findByAuthor(null);
+        @Test @DisplayName("search is case insensitive")
+        void caseInsensitiveSearch() {
+            List<Book> upperCase = lib.findByAuthor("HARPER LEE");
+            List<Book> lowerCase = lib.findByAuthor("harper lee");
+            List<Book> mixedCase = lib.findByAuthor("Harper LEE");
 
-            // Then
+            assertEquals(1, upperCase.size());
+            assertEquals(1, lowerCase.size());
+            assertEquals(1, mixedCase.size());
+            assertEquals("To Kill a Mockingbird", upperCase.get(0).title());
+        }
+
+        @Test @DisplayName("returns empty list for non-existent author")
+        void nonExistentAuthor() {
+            List<Book> books = lib.findByAuthor("Non Existent Author");
             assertTrue(books.isEmpty());
         }
 
-        @Test
-        @DisplayName("Should return empty list for non-existent author")
-        void shouldReturnEmptyListForNonExistentAuthor() {
-            // When
-            List<Book> books = library.findByAuthor("Non Existent Author");
+        @Test @DisplayName("handles null author gracefully")
+        void nullAuthor() {
+            List<Book> books = lib.findByAuthor(null);
+            assertTrue(books.isEmpty());
+        }
 
-            // Then
+        @Test @DisplayName("finds partial author matches")
+        void partialAuthorMatch() throws Exception {
+            Book book4 = new Book("978-1-234-56789-0", "The Hobbit", "J.R.R. Tolkien", 1937);
+            lib.addBook(book4);
+
+            List<Book> tolkienBooks = lib.findByAuthor("tolkien");
+            assertEquals(2, tolkienBooks.size());
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"", "   ", "\t", "\n"})
+        @DisplayName("handles empty or whitespace author names")
+        void emptyOrWhitespaceAuthor(String author) {
+            List<Book> books = lib.findByAuthor(author);
             assertTrue(books.isEmpty());
         }
     }
 
-    @Nested
-    @DisplayName("Check Out Tests")
+    @Nested @DisplayName("checkOut()")
     class CheckOutTests {
 
-        @BeforeEach
-        void setUpBook() throws Library.DuplicateBookException {
-            library.addBook(testBook1);
+        @Test @DisplayName("successfully checks out available book")
+        void checkOutAvailableBook() throws Exception {
+            lib.checkOut("978-0-06-112008-4", "john.doe");
+            assertFalse(lib.isAvailable("978-0-06-112008-4"));
+            assertEquals("john.doe", lib.getCheckedOutBy("978-0-06-112008-4"));
         }
 
-        @Test
-        @DisplayName("Should successfully check out available book")
-        void shouldCheckOutAvailableBook() throws Exception {
-            // When
-            library.checkOut(testBook1.isbn(), "member1");
-
-            // Then
-            assertFalse(library.isAvailable(testBook1.isbn()));
-        }
-
-        @Test
-        @DisplayName("Should throw exception for non-existent book checkout")
-        void shouldThrowExceptionForNonExistentBookCheckout() {
-            // When & Then
+        @Test @DisplayName("checking out non-existent book throws BookNotFoundException")
+        void checkOutNonExistentBook() {
             assertThrows(
                 Library.BookNotFoundException.class,
-                
+                () -> lib.checkOut("999-invalid-isbn", "john.doe")
+            );
+        }
+
+        @Test @DisplayName("checking out already checked out book throws BookUnavailableException")
+        void checkOutAlreadyCheckedOutBook() throws Exception {
+            lib.checkOut("978-0-06-112008-4", "jane.smith");
+            
+            Library.BookUnavailableException exception = assertThrows(
+                Library.BookUnavailableException.class,
+                () -> lib.checkOut("978-0-06-112008-4", "john.doe")
+            );
+            assertTrue(exception.getMessage().contains("already checked out"));
+        }
+
+        @Test @DisplayName("multiple books can be checked out by same member")
+        void sameUserMultipleBooks() throws Exception {
+            lib.checkOut("978-0-06-112008-4", "john.doe");
+            lib.checkOut("978-0-618-00222-3", "john.doe");
+
+            assertFalse(lib.isAvailable("978-0-06-112008-4"));
+            assertFalse(lib.isAvailable("978-0-618-00222-3"));
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @DisplayName("checking out with invalid member throws appropriate exception")
+        void checkOutInvalidMember(String member) {
+            assertThrows(Exception.class, () -> lib.checkOut("978-0-06-112008-
