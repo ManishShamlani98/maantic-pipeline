@@ -2,66 +2,62 @@
 
 Mode: Generated from scratch
 
-# QA Analysis for Book.java
+# QA ANALYSIS FOR BOOK CLASS
 
-## ANALYSIS
-This code defines an immutable Book record with validation in the compact constructor. It validates that ISBN, title, and author are not null/blank, and year is a 4-digit number (1000-9999). The record automatically generates equals, hashCode, toString, and accessor methods.
+=== ANALYSIS ===
+This code defines an immutable `Book` record with validation in the compact constructor. It validates that ISBN, title, and author are not null/blank, and that the year is a 4-digit number (1000-9999). The record automatically provides equals, hashCode, toString, and accessor methods.
 
-## BDD SCENARIOS (GHERKIN)
+=== BDD SCENARIOS (GHERKIN) ===
 
 ```gherkin
 Feature: Book Creation and Validation
-  As a library system user
+  As a library system
   I want to create valid book records
-  So that I can maintain accurate book information
+  So that I can maintain data integrity
 
   @smoke @regression
   Scenario: Create a valid book with all required fields
     Given I have valid book details
-    When I create a book with ISBN "978-0134685991", title "Effective Java", author "Joshua Bloch", and year 2017
+    When I create a book with ISBN "978-0134685991", title "Effective Java", author "Joshua Bloch", and year 2018
     Then the book should be created successfully
-    And the book should have ISBN "978-0134685991"
-    And the book should have title "Effective Java"
-    And the book should have author "Joshua Bloch"
-    And the book should have year 2017
-
-  @regression @edge
-  Scenario: Attempt to create book with blank ISBN
-    Given I have book details with blank ISBN
-    When I try to create a book with ISBN "", title "Clean Code", author "Robert Martin", and year 2008
-    Then an IllegalArgumentException should be thrown
-    And the exception message should contain "ISBN must not be blank"
-
-  @regression @edge
-  Scenario: Attempt to create book with invalid year
-    Given I have book details with invalid year
-    When I try to create a book with ISBN "978-0132350884", title "Clean Code", author "Robert Martin", and year 999
-    Then an IllegalArgumentException should be thrown
-    And the exception message should contain "Year must be 4-digit"
+    And all fields should be accessible
 
   @smoke @regression
-  Scenario: Verify book immutability and equality
-    Given I create two books with identical details
-    When I compare the books for equality
-    Then the books should be equal
-    And they should have the same hash code
+  Scenario: Book equality and immutability
+    Given I have two books with identical details
+    When I compare them for equality
+    Then they should be equal
+    And their hash codes should be the same
 
   @regression @edge
-  Scenario Outline: Validate book creation with various invalid inputs
-    Given I have invalid book details
-    When I try to create a book with ISBN "<isbn>", title "<title>", author "<author>", and year <year>
+  Scenario Outline: Invalid book creation should fail
+    Given I want to create a book
+    When I create a book with ISBN "<isbn>", title "<title>", author "<author>", and year <year>
     Then an IllegalArgumentException should be thrown
-    And the exception message should contain "<expectedMessage>"
+    And the error message should contain "<error_message>"
 
     Examples:
-      | isbn           | title       | author        | year | expectedMessage        |
-      |                | Clean Code  | Robert Martin | 2008 | ISBN must not be blank |
-      | 978-0132350884 |             | Robert Martin | 2008 | Title must not be blank|
-      | 978-0132350884 | Clean Code  |               | 2008 | Author must not be blank|
-      | 978-0132350884 | Clean Code  | Robert Martin | 10000| Year must be 4-digit   |
+      | isbn           | title         | author        | year | error_message        |
+      |                | Effective Java| Joshua Bloch  | 2018 | ISBN must not be blank |
+      | 978-0134685991 |               | Joshua Bloch  | 2018 | Title must not be blank|
+      | 978-0134685991 | Effective Java|               | 2018 | Author must not be blank|
+      | 978-0134685991 | Effective Java| Joshua Bloch  | 999  | Year must be 4-digit |
+      | 978-0134685991 | Effective Java| Joshua Bloch  | 10000| Year must be 4-digit |
+
+  @edge @regression
+  Scenario: Book with minimum valid year
+    Given I want to create a book with the earliest valid year
+    When I create a book with year 1000
+    Then the book should be created successfully
+
+  @edge @regression
+  Scenario: Book with maximum valid year
+    Given I want to create a book with the latest valid year
+    When I create a book with year 9999
+    Then the book should be created successfully
 ```
 
-## TDD TEST SCRIPT
+=== TDD TEST SCRIPT ===
 
 ```java
 package com.example.library;
@@ -69,9 +65,8 @@ package com.example.library;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
-
+import org.junit.jupiter.params.provider.CsvSource;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("Book Tests")
@@ -84,7 +79,7 @@ class BookTest {
         String isbn = "978-0134685991";
         String title = "Effective Java";
         String author = "Joshua Bloch";
-        int year = 2017;
+        int year = 2018;
 
         // When
         Book book = new Book(isbn, title, author, year);
@@ -97,161 +92,146 @@ class BookTest {
         assertEquals(year, book.year());
     }
 
-    @ParameterizedTest
-    @DisplayName("Should throw exception for null or blank ISBN")
-    @ValueSource(strings = {"", " ", "   ", "\t", "\n"})
-    void shouldThrowExceptionForInvalidIsbn(String invalidIsbn) {
+    @Test
+    @DisplayName("Should maintain book equality and immutability")
+    void shouldMaintainBookEqualityAndImmutability() {
+        // Given
+        Book book1 = new Book("978-0134685991", "Effective Java", "Joshua Bloch", 2018);
+        Book book2 = new Book("978-0134685991", "Effective Java", "Joshua Bloch", 2018);
+
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book(invalidIsbn, "Clean Code", "Robert Martin", 2008)
+        assertEquals(book1, book2);
+        assertEquals(book1.hashCode(), book2.hashCode());
+        assertEquals(book1.toString(), book2.toString());
+    }
+
+    @ParameterizedTest
+    @DisplayName("Should reject null or blank ISBN")
+    @ValueSource(strings = {"", " ", "   "})
+    void shouldRejectNullOrBlankIsbn(String invalidIsbn) {
+        // When & Then
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book(invalidIsbn, "Valid Title", "Valid Author", 2020)
         );
-        assertEquals("ISBN must not be blank", exception.getMessage());
+        assertTrue(exception.getMessage().contains("ISBN must not be blank"));
     }
 
     @Test
-    @DisplayName("Should throw exception for null ISBN")
-    void shouldThrowExceptionForNullIsbn() {
+    @DisplayName("Should reject null ISBN")
+    void shouldRejectNullIsbn() {
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book(null, "Clean Code", "Robert Martin", 2008)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book(null, "Valid Title", "Valid Author", 2020)
         );
-        assertEquals("ISBN must not be blank", exception.getMessage());
+        assertTrue(exception.getMessage().contains("ISBN must not be blank"));
     }
 
     @ParameterizedTest
-    @DisplayName("Should throw exception for null or blank title")
-    @ValueSource(strings = {"", " ", "   ", "\t", "\n"})
-    void shouldThrowExceptionForInvalidTitle(String invalidTitle) {
+    @DisplayName("Should reject null or blank title")
+    @ValueSource(strings = {"", " ", "   "})
+    void shouldRejectNullOrBlankTitle(String invalidTitle) {
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book("978-0132350884", invalidTitle, "Robert Martin", 2008)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book("978-0134685991", invalidTitle, "Valid Author", 2020)
         );
-        assertEquals("Title must not be blank", exception.getMessage());
+        assertTrue(exception.getMessage().contains("Title must not be blank"));
     }
 
     @Test
-    @DisplayName("Should throw exception for null title")
-    void shouldThrowExceptionForNullTitle() {
+    @DisplayName("Should reject null title")
+    void shouldRejectNullTitle() {
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book("978-0132350884", null, "Robert Martin", 2008)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book("978-0134685991", null, "Valid Author", 2020)
         );
-        assertEquals("Title must not be blank", exception.getMessage());
+        assertTrue(exception.getMessage().contains("Title must not be blank"));
     }
 
     @ParameterizedTest
-    @DisplayName("Should throw exception for null or blank author")
-    @ValueSource(strings = {"", " ", "   ", "\t", "\n"})
-    void shouldThrowExceptionForInvalidAuthor(String invalidAuthor) {
+    @DisplayName("Should reject null or blank author")
+    @ValueSource(strings = {"", " ", "   "})
+    void shouldRejectNullOrBlankAuthor(String invalidAuthor) {
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book("978-0132350884", "Clean Code", invalidAuthor, 2008)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book("978-0134685991", "Valid Title", invalidAuthor, 2020)
         );
-        assertEquals("Author must not be blank", exception.getMessage());
+        assertTrue(exception.getMessage().contains("Author must not be blank"));
     }
 
     @Test
-    @DisplayName("Should throw exception for null author")
-    void shouldThrowExceptionForNullAuthor() {
+    @DisplayName("Should reject null author")
+    void shouldRejectNullAuthor() {
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book("978-0132350884", "Clean Code", null, 2008)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book("978-0134685991", "Valid Title", null, 2020)
         );
-        assertEquals("Author must not be blank", exception.getMessage());
+        assertTrue(exception.getMessage().contains("Author must not be blank"));
     }
 
     @ParameterizedTest
-    @DisplayName("Should throw exception for invalid year")
-    @ValueSource(ints = {999, 500, 0, -1, 10000, 2025, 99999})
-    void shouldThrowExceptionForInvalidYear(int invalidYear) {
+    @DisplayName("Should reject invalid years")
+    @ValueSource(ints = {999, 500, 0, -1, 10000, 2025})
+    void shouldRejectInvalidYears(int invalidYear) {
         // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book("978-0132350884", "Clean Code", "Robert Martin", invalidYear)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+            new Book("978-0134685991", "Valid Title", "Valid Author", invalidYear)
         );
-        assertEquals("Year must be 4-digit", exception.getMessage());
+        assertTrue(exception.getMessage().contains("Year must be 4-digit"));
     }
 
     @ParameterizedTest
-    @DisplayName("Should accept valid 4-digit years")
-    @ValueSource(ints = {1000, 1500, 1995, 2023, 9999})
-    void shouldAcceptValid4DigitYears(int validYear) {
+    @DisplayName("Should accept valid boundary years")
+    @ValueSource(ints = {1000, 9999})
+    void shouldAcceptValidBoundaryYears(int validYear) {
         // When & Then
         assertDoesNotThrow(() -> {
-            Book book = new Book("978-0132350884", "Clean Code", "Robert Martin", validYear);
+            Book book = new Book("978-0134685991", "Valid Title", "Valid Author", validYear);
             assertEquals(validYear, book.year());
         });
     }
 
-    @Test
-    @DisplayName("Should implement equals and hashCode correctly")
-    void shouldImplementEqualsAndHashCodeCorrectly() {
-        // Given
-        Book book1 = new Book("978-0134685991", "Effective Java", "Joshua Bloch", 2017);
-        Book book2 = new Book("978-0134685991", "Effective Java", "Joshua Bloch", 2017);
-        Book book3 = new Book("978-0132350884", "Clean Code", "Robert Martin", 2008);
+    @ParameterizedTest
+    @DisplayName("Should handle various valid inputs")
+    @CsvSource({
+        "'978-0134685991', 'Effective Java', 'Joshua Bloch', 2018",
+        "'123-456-789', 'Test Book', 'Test Author', 1000",
+        "'987-654-321', 'Another Book', 'Another Author', 9999",
+        "'ISBN123', 'Single Word Title', 'SingleName', 2020"
+    })
+    void shouldHandleVariousValidInputs(String isbn, String title, String author, int year) {
+        // When
+        Book book = new Book(isbn, title, author, year);
 
         // Then
-        assertEquals(book1, book2);
-        assertEquals(book1.hashCode(), book2.hashCode());
-        assertNotEquals(book1, book3);
-        assertNotEquals(book1.hashCode(), book3.hashCode());
+        assertNotNull(book);
+        assertEquals(isbn, book.isbn());
+        assertEquals(title, book.title());
+        assertEquals(author, book.author());
+        assertEquals(year, book.year());
     }
 
     @Test
-    @DisplayName("Should implement toString correctly")
-    void shouldImplementToStringCorrectly() {
+    @DisplayName("Should generate meaningful toString")
+    void shouldGenerateMeaningfulToString() {
         // Given
-        Book book = new Book("978-0134685991", "Effective Java", "Joshua Bloch", 2017);
+        Book book = new Book("978-0134685991", "Effective Java", "Joshua Bloch", 2018);
 
         // When
         String toString = book.toString();
 
         // Then
-        assertNotNull(toString);
         assertTrue(toString.contains("978-0134685991"));
         assertTrue(toString.contains("Effective Java"));
         assertTrue(toString.contains("Joshua Bloch"));
-        assertTrue(toString.contains("2017"));
-    }
-
-    @ParameterizedTest
-    @DisplayName("Should validate all combinations of invalid parameters")
-    @CsvSource({
-        "'', 'Title', 'Author', 2000, 'ISBN must not be blank'",
-        "'123', '', 'Author', 2000, 'Title must not be blank'",
-        "'123', 'Title', '', 2000, 'Author must not be blank'",
-        "'123', 'Title', 'Author', 999, 'Year must be 4-digit'",
-        "'123', 'Title', 'Author', 10000, 'Year must be 4-digit'"
-    })
-    void shouldValidateAllCombinationsOfInvalidParameters(
-            String isbn, String title, String author, int year, String expectedMessage) {
-        
-        // Handle empty strings as null for proper validation
-        String actualIsbn = isbn.isEmpty() ? null : isbn;
-        String actualTitle = title.isEmpty() ? null : title;
-        String actualAuthor = author.isEmpty() ? null : author;
-
-        // When & Then
-        IllegalArgumentException exception = assertThrows(
-            IllegalArgumentException.class,
-            () -> new Book(actualIsbn, actualTitle, actualAuthor, year)
-        );
-        assertEquals(expectedMessage, exception.getMessage());
+        assertTrue(toString.contains("2018"));
     }
 }
 ```
 
-## GITHUB ACTIONS WORKFLOW
+=== GITHUB ACTIONS WORKFLOW ===
 
 ```yaml
-name: Library System CI/CD
+name: Library System Tests
 
 on:
   push:
@@ -262,49 +242,61 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    
     strategy:
       matrix:
         java-version: [11, 17, 21]
-
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-
+      
     - name: Set up JDK ${{ matrix.java-version }}
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v3
       with:
         java-version: ${{ matrix.java-version }}
         distribution: 'temurin'
-
+        
     - name: Cache Maven dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v3
       with:
         path: ~/.m2
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
-
-    - name: Create Maven wrapper if not exists
+        
+    - name: Create Maven project structure
       run: |
-        if [ ! -f mvnw ]; then
-          mvn wrapper:wrapper
-        fi
-
-    - name: Make Maven wrapper executable
-      run: chmod +x mvnw
-
-    - name: Compile code
-      run: ./mvnw compile
-
-    - name: Run smoke tests
-      run: ./mvnw test -Dgroups="smoke"
-
-    - name: Run all tests
-      run: ./mvnw test
-
-    - name: Generate test report
-      run: ./mvnw surefire-report:report
-
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
+        cd LibrarySystem
+        if [ ! -f pom.xml ]; then
+          cat > pom.xml << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <project xmlns="http://maven.apache.org/POM/4.0.0"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+                                     http://maven.apache.org/xsd/maven-4.0.0.xsd">
+            <modelVersion>4.0.0</modelVersion>
+            <groupId>com.example</groupId>
+            <artifactId>library-system</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <packaging>jar</packaging>
+            
+            <properties>
+                <maven.compiler.source>11</maven.compiler.source>
+                <maven.compiler.target>11</maven.compiler.target>
+                <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+                <junit.version>5.10.0</junit.version>
+            </properties>
+            
+            <dependencies>
+                <dependency>
+                    <groupId>org.junit.jupiter</groupId>
+                    <artifactId>junit-jupiter</artifactId>
+                    <version>\${junit.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.
