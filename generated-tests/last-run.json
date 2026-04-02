@@ -1,0 +1,11 @@
+{
+  "triggered": "2026-04-02T09:19:55.420Z",
+  "files": [
+    "LibrarySystem/src/main/java/com/example/library/LibraryBroken.java",
+    "LibrarySystem/src/main/java/com/example/library/Library.java",
+    "LibrarySystem/src/main/java/com/example/library/Book.java"
+  ],
+  "languages": [
+    "Java"
+  ]
+}
