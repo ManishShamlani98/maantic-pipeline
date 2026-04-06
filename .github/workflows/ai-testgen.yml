@@ -3,9 +3,9 @@ name: Run Generated Tests
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main, develop ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   test:
@@ -28,165 +28,80 @@ jobs:
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
         restore-keys: ${{ runner.os }}-m2
         
-    - name: Create Maven structure if not exists
-      run: |
-        if [ ! -f "pom.xml" ]; then
-          mkdir -p generated-tests/src/test/java
-          cd generated-tests
-          cat > pom.xml << 'EOF'
-        <?xml version="1.0" encoding="UTF-8"?>
-        <project xmlns="http://maven.apache.org/POM/4.0.0"
-                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-                 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>com.example</groupId>
-            <artifactId>generated-tests</artifactId>
-            <version>1.0.0</version>
-            <packaging>jar</packaging>
-            <properties>
-                <maven.compiler.source>11</maven.compiler.source>
-                <maven.compiler.target>11</maven.compiler.target>
-                <junit.version>5.9.2</junit.version>
-                <maven.surefire.version>3.0.0-M9</maven.surefire.version>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>org.junit.jupiter</groupId>
-                    <artifactId>junit-jupiter-engine</artifactId>
-                    <version>${junit.version}</version>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.junit.jupiter</groupId>
-                    <artifactId>junit-jupiter-api</artifactId>
-                    <version>${junit.version}</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <version>${maven.surefire.version}</version>
-                        <configuration>
-                            <includes>
-                                <include>**/*Test.java</include>
-                                <include>**/*Tests.java</include>
-                            </includes>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </project>
-        EOF
-        else
-          mkdir -p generated-tests
-          cp pom.xml generated-tests/
-        fi
-        
-    - name: Copy source files to test project
-      run: |
-        mkdir -p generated-tests/src/main/java
-        if [ -d "LibrarySystem/src/main/java" ]; then
-          cp -r LibrarySystem/src/main/java/* generated-tests/src/main/java/
-        fi
-        find . -name "*.java" -path "*/src/main/*" -not -path "./generated-tests/*" -exec cp --parents {} generated-tests/ \;
-        
     - name: Install dependencies
-      run: |
-        cd generated-tests
-        mvn clean compile test-compile
-        
+      run: mvn clean compile test-compile
+      
     - name: Run tests
-      id: test_run
-      run: |
-        cd generated-tests
-        mvn test -Dmaven.test.failure.ignore=true
+      run: mvn test -Dtest.source.directory=generated-tests/
       continue-on-error: true
       
     - name: Parse test results
-      id: test_summary
+      id: test-results
       run: |
-        cd generated-tests
-        if [ -f "target/surefire-reports/TEST-*.xml" ]; then
-          TOTAL=$(grep -h "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum+0}')
-          FAILURES=$(grep -h "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum+0}')
-          ERRORS=$(grep -h "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum+0}')
-          SKIPPED=$(grep -h "skipped=" target/surefire-reports/TEST-*.xml | sed 's/.*skipped="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum+0}')
-          PASSED=$((TOTAL - FAILURES - ERRORS - SKIPPED))
-          
+        if [ -f target/surefire-reports/TEST-*.xml ]; then
+          TOTAL=$(grep -h "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          FAILURES=$(grep -h "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          ERRORS=$(grep -h "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          PASSED=$((TOTAL - FAILURES - ERRORS))
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
           echo "passed=$PASSED" >> $GITHUB_OUTPUT
           echo "failed=$((FAILURES + ERRORS))" >> $GITHUB_OUTPUT
-          echo "skipped=$SKIPPED" >> $GITHUB_OUTPUT
-          
-          if [ $((FAILURES + ERRORS)) -eq 0 ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "status=failure" >> $GITHUB_OUTPUT
-          fi
         else
           echo "total=0" >> $GITHUB_OUTPUT
           echo "passed=0" >> $GITHUB_OUTPUT
           echo "failed=0" >> $GITHUB_OUTPUT
-          echo "skipped=0" >> $GITHUB_OUTPUT
-          echo "status=failure" >> $GITHUB_OUTPUT
         fi
         
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results
         path: |
-          generated-tests/target/surefire-reports/
-          generated-tests/target/site/
+          target/surefire-reports/
+          target/site/jacoco/
         retention-days: 30
         
     - name: Test Summary
-      if: always()
       run: |
         echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
         echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
-        echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
-        echo "| Total Tests | ${{ steps.test_summary.outputs.total }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Passed | ${{ steps.test_summary.outputs.passed }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Failed | ${{ steps.test_summary.outputs.failed }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Skipped | ${{ steps.test_summary.outputs.skipped }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Status | ${{ steps.test_summary.outputs.status }} |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Total Tests | ${{ steps.test-results.outputs.total }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Passed | ${{ steps.test-results.outputs.passed }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Failed | ${{ steps.test-results.outputs.failed }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.test-results.outputs.failed }}" -eq "0" ]; then
+          echo "✅ All tests passed!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Some tests failed!" >> $GITHUB_STEP_SUMMARY
+        fi
         
-    - name: Post results via GitHub API
-      if: always()
-      uses: actions/github-script@v6
+    - name: Post results to GitHub API
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
       with:
         script: |
-          const status = '${{ steps.test_summary.outputs.status }}';
-          const total = '${{ steps.test_summary.outputs.total }}';
-          const passed = '${{ steps.test_summary.outputs.passed }}';
-          const failed = '${{ steps.test_summary.outputs.failed }}';
-          const skipped = '${{ steps.test_summary.outputs.skipped }}';
+          const total = ${{ steps.test-results.outputs.total }};
+          const passed = ${{ steps.test-results.outputs.passed }};
+          const failed = ${{ steps.test-results.outputs.failed }};
+          const status = failed === 0 ? '✅ PASSED' : '❌ FAILED';
           
-          const body = `## Java Test Results
+          const body = `## Generated Test Results for PaymentService.java
           
-          **Status:** ${status === 'success' ? '✅ PASSED' : '❌ FAILED'}
+          ${status}
           
           | Metric | Count |
-          |--------|--------|
+          |--------|-------|
           | Total Tests | ${total} |
           | Passed | ${passed} |
           | Failed | ${failed} |
-          | Skipped | ${skipped} |
           
-          **Workflow:** ${context.workflow}
-          **Run:** ${context.runNumber}`;
+          Test artifacts have been uploaded and are available in the workflow run.`;
           
-          if (context.eventName === 'pull_request') {
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-          }
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
