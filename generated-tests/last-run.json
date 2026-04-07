@@ -1,7 +1,7 @@
 {
-  "triggered": "2026-04-06T11:39:10.759Z",
-  "files": [
-    "PaymentService.java"
-  ],
-  "hasReqDoc": false
+  "triggered": "2026-04-07T10-40-46-283Z",
+  "project": "PaymentService.java",
+  "lang": "Java",
+  "hasRequirement": false,
+  "mode": "fresh"
 }
