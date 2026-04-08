@@ -24,7 +24,13 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: maven
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
         
     - name: Install dependencies
       run: mvn clean compile test-compile
@@ -33,14 +39,14 @@ jobs:
       run: mvn test -Dtest.source.directory=generated-tests/
       continue-on-error: true
       
-    - name: Generate test report
+    - name: Publish test results
       uses: dorny/test-reporter@v1
       if: always()
       with:
-        name: Test Results
+        name: Maven Tests
         path: target/surefire-reports/*.xml
         reporter: java-junit
-        fail-on-error: false
+        fail-on-error: true
         
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -52,29 +58,34 @@ jobs:
           target/site/jacoco/
         retention-days: 30
         
-    - name: Generate summary
+    - name: Generate test summary
       if: always()
       run: |
-        echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "# Test Results Summary" >> $GITHUB_STEP_SUMMARY
         if [ -f target/surefire-reports/TEST-*.xml ]; then
-          TOTAL=$(grep -h "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
-          FAILURES=$(grep -h "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
-          ERRORS=$(grep -h "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          TOTAL=$(grep -h "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{sum += $1} END {print sum}')
+          FAILURES=$(grep -h "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{sum += $1} END {print sum}')
+          ERRORS=$(grep -h "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{sum += $1} END {print sum}')
+          SKIPPED=$(grep -h "skipped=" target/surefire-reports/TEST-*.xml | sed 's/.*skipped="\([0-9]*\)".*/\1/' | awk '{sum += $1} END {print sum}')
           PASSED=$((TOTAL - FAILURES - ERRORS))
           
-          if [ $((FAILURES + ERRORS)) -eq 0 ]; then
-            echo "✅ **All tests passed!**" >> $GITHUB_STEP_SUMMARY
-            echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
-            echo "- Passed: $PASSED" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 Total Tests | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+          echo "| ❌ Failed | $FAILURES |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🚫 Errors | $ERRORS |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏭️ Skipped | $SKIPPED |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ $FAILURES -eq 0 ] && [ $ERRORS -eq 0 ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 🎉 All tests passed!" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Tests failed!**" >> $GITHUB_STEP_SUMMARY
-            echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
-            echo "- Passed: $PASSED" >> $GITHUB_STEP_SUMMARY
-            echo "- Failed: $FAILURES" >> $GITHUB_STEP_SUMMARY
-            echo "- Errors: $ERRORS" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## ❌ Some tests failed" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
         else
-          echo "❌ **No test results found**" >> $GITHUB_STEP_SUMMARY
+          echo "❌ No test results found" >> $GITHUB_STEP_SUMMARY
           exit 1
         fi
