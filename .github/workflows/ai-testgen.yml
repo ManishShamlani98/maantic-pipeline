@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: Java CI
 
 on:
   push:
@@ -24,99 +24,23 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: maven
         
-    - name: Cache Maven dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2
-        
-    - name: Detect and validate Maven project
-      run: |
-        if [ ! -f "pom.xml" ]; then
-          echo "No pom.xml found. Creating basic Maven structure..."
-          mkdir -p src/main/java src/test/java
-          cat > pom.xml << 'EOF'
-        <?xml version="1.0" encoding="UTF-8"?>
-        <project xmlns="http://maven.apache.org/POM/4.0.0"
-                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                 xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
-                 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-            <modelVersion>4.0.0</modelVersion>
-            <groupId>com.example</groupId>
-            <artifactId>payment-service</artifactId>
-            <version>1.0.0</version>
-            <properties>
-                <maven.compiler.source>17</maven.compiler.source>
-                <maven.compiler.target>17</maven.compiler.target>
-                <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-            </properties>
-            <dependencies>
-                <dependency>
-                    <groupId>junit</groupId>
-                    <artifactId>junit</artifactId>
-                    <version>4.13.2</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <version>3.0.0</version>
-                        <configuration>
-                            <testSourceDirectory>generated-tests</testSourceDirectory>
-                            <includes>
-                                <include>**/*Test.java</include>
-                                <include>**/*Tests.java</include>
-                            </includes>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </project>
-        EOF
-        fi
-        
-    - name: Setup test directory structure
-      run: |
-        if [ -d "generated-tests" ] && [ "$(ls -A generated-tests)" ]; then
-          echo "Using existing generated-tests directory"
-          find generated-tests -name "*.java" | head -5
-        else
-          echo "No tests found in generated-tests directory"
-          mkdir -p generated-tests
-        fi
-        
-    - name: Compile project
-      run: mvn compile -q
-      
-    - name: Compile tests
-      run: mvn test-compile -q || echo "Test compilation completed with warnings"
+    - name: Install dependencies
+      run: mvn clean compile test-compile
       
     - name: Run tests
-      run: |
-        mvn test -Dtest.source.directory=generated-tests || echo "Tests completed"
-        
-    - name: Parse test results
-      id: test-results
-      run: |
-        SUREFIRE_REPORTS="target/surefire-reports"
-        if [ -d "$SUREFIRE_REPORTS" ]; then
-          PASSED=$(find $SUREFIRE_REPORTS -name "*.xml" -exec grep -l 'failures="0"' {} \; | wc -l)
-          FAILED=$(find $SUREFIRE_REPORTS -name "*.xml" -exec grep -l 'failures="[1-9]' {} \; | wc -l)
-          TOTAL=$((PASSED + FAILED))
-          
-          echo "passed=$PASSED" >> $GITHUB_OUTPUT
-          echo "failed=$FAILED" >> $GITHUB_OUTPUT
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
-        else
-          echo "passed=0" >> $GITHUB_OUTPUT
-          echo "failed=0" >> $GITHUB_OUTPUT
-          echo "total=0" >> $GITHUB_OUTPUT
-        fi
+      run: mvn test -Dtest.source.directory=generated-tests/
+      continue-on-error: true
+      
+    - name: Generate test report
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Test Results
+        path: target/surefire-reports/*.xml
+        reporter: java-junit
+        fail-on-error: false
         
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -125,24 +49,32 @@ jobs:
         name: test-results
         path: |
           target/surefire-reports/
-          target/test-results/
+          target/site/jacoco/
         retention-days: 30
         
-    - name: Post test summary
+    - name: Generate summary
       if: always()
       run: |
         echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "| Status | Count |" >> $GITHUB_STEP_SUMMARY
-        echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-        echo "| ✅ Passed | ${{ steps.test-results.outputs.passed }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| ❌ Failed | ${{ steps.test-results.outputs.failed }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| 📊 Total | ${{ steps.test-results.outputs.total }} |" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        if [ "${{ steps.test-results.outputs.failed }}" -gt "0" ]; then
-          echo "❌ Some tests failed. Check the test results artifact for details." >> $GITHUB_STEP_SUMMARY
-          exit 1
+        if [ -f target/surefire-reports/TEST-*.xml ]; then
+          TOTAL=$(grep -h "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          FAILURES=$(grep -h "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          ERRORS=$(grep -h "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{sum+=$1} END {print sum}')
+          PASSED=$((TOTAL - FAILURES - ERRORS))
+          
+          if [ $((FAILURES + ERRORS)) -eq 0 ]; then
+            echo "✅ **All tests passed!**" >> $GITHUB_STEP_SUMMARY
+            echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
+            echo "- Passed: $PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Tests failed!**" >> $GITHUB_STEP_SUMMARY
+            echo "- Total: $TOTAL" >> $GITHUB_STEP_SUMMARY
+            echo "- Passed: $PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "- Failed: $FAILURES" >> $GITHUB_STEP_SUMMARY
+            echo "- Errors: $ERRORS" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
         else
-          echo "✅ All tests passed successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "❌ **No test results found**" >> $GITHUB_STEP_SUMMARY
+          exit 1
         fi
