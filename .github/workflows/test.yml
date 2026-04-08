@@ -1,74 +1,103 @@
 name: AI TestGen Pipeline — CI/CD
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: 'Branch to run tests on'
-        required: false
-        default: 'main'
+push:
+branches: [ main, develop ]
+pull_request:
+branches: [ main ]
+workflow_dispatch:
+inputs:
+branch:
+description: 'Branch to run tests on'
+required: false
+default: 'main'
 
 jobs:
-  ai-testgen:
-    name: AI Test Generation & Validation
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: read
+ai-testgen:
+name: AI Test Generation & Validation
+runs-on: ubuntu-latest
+permissions:
+contents: write
+actions: read
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+```
+steps:
+  - name: Checkout code
+    uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: '20'
+      cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+  - name: Install dependencies
+    run: npm ci
 
-      - name: Start pipeline server
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
-        run: |
-          node pipeline.cjs &
-          echo "Pipeline server PID: $!"
-          sleep 8
-          curl -f http://localhost:3002/api/health || exit 1
-          echo "✅ Pipeline server is healthy"
+  # ✅ Create .env dynamically (important fix)
+  - name: Create .env file
+    run: |
+      echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
+      echo "PAT_TOKEN=${{ secrets.PAT_TOKEN }}" >> .env
+      echo "GITHUB_REPO=${{ github.repository }}" >> .env
 
-      - name: Run health check
-        run: |
-          STATUS=$(curl -s http://localhost:3002/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','error'))")
-          echo "Server status: $STATUS"
-          if [ "$STATUS" != "ok" ]; then
-            echo "❌ Server not healthy"
-            exit 1
-          fi
+  # ✅ Start server with logs
+  - name: Start pipeline server
+    run: |
+      echo "🚀 Starting pipeline server..."
+      node pipeline.cjs > server.log 2>&1 &
+      echo "PID: $!"
+      sleep 12
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results-${{ github.run_number }}
-          path: generated-tests/
-          retention-days: 30
+      echo "===== SERVER LOG START ====="
+      cat server.log || true
+      echo "===== SERVER LOG END ====="
 
-      - name: Summary
-        if: always()
-        run: |
-          echo "## AI TestGen Pipeline Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Run: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Triggered by: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+  # ✅ Health check with retry
+  - name: Run health check
+    run: |
+      echo "🔍 Checking server health..."
+
+      for i in {1..5}; do
+        STATUS=$(curl -s http://localhost:3002/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','error'))" 2>/dev/null || echo "error")
+        
+        echo "Attempt $i - Status: $STATUS"
+
+        if [ "$STATUS" = "ok" ]; then
+          echo "✅ Server is healthy"
+          exit 0
+        fi
+
+        sleep 5
+      done
+
+      echo "❌ Server failed to become healthy"
+      exit 1
+
+  # ✅ Upload logs (NEW - very useful)
+  - name: Upload server logs
+    uses: actions/upload-artifact@v4
+    if: always()
+    with:
+      name: server-logs-${{ github.run_number }}
+      path: server.log
+      retention-days: 7
+
+  - name: Upload test results
+    uses: actions/upload-artifact@v4
+    if: always()
+    with:
+      name: test-results-${{ github.run_number }}
+      path: generated-tests/
+      retention-days: 30
+
+  - name: Summary
+    if: always()
+    run: |
+      echo "## AI TestGen Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+      echo "- Run: #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+      echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+      echo "- Commit: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+      echo "- Triggered by: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
